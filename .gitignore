@@ -1,0 +1,6 @@
+__pycache__
+
+# Ignore all files with prefix "."...
+.*
+# ...except for this file.
+!/.gitignore
