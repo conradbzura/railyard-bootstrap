@@ -3,6 +3,7 @@ from __future__ import annotations
 import enum
 import functools
 import re
+import sys
 from typing import (
     Callable,
     Generic,
@@ -35,6 +36,8 @@ class Sortable(Protocol):
 
 T_get = TypeVar("T_get", bound=Sortable, covariant=True)
 T_set = TypeVar("T_set", covariant=True)
+
+VersionSegmentFactory = Callable[[Optional[Union[T_get, T_set]]], T_get]
 
 
 def grammatical_series(*words: str) -> str:
@@ -182,11 +185,35 @@ class ReleaseCycle(metaclass=enum.EnumMeta):
         return cls.__ReleaseCycle_mapping__.get(key)
 
 
-VersionSegmentFactory = Callable[[Optional[Union[T_get, T_set]]], T_get]
+class VersionParser:
+    def __call__(self, version: str, pattern: re.Pattern = DEFAULT_VERSION_PATTERN) -> Version:
+        if __name__ in sys.modules:
+            del sys.modules[__name__]
+        if pattern is not DEFAULT_VERSION_PATTERN:
+            missing_capture_groups = set(DEFAULT_VERSION_PATTERN.groupindex.keys()) - set(
+                pattern.groupindex.keys()
+            )
+            if missing_capture_groups:
+                raise NonConformingVersionPattern(missing_capture_groups)
+        match = pattern.match(version)
+        if not match:
+            raise NonConformingVersionString(version, pattern)
+        segments: dict[str, Optional[str]] = match.groupdict()
+        return Version(**segments)
+
+    @classmethod
+    def plugin(cls, alias: str):
+        def decorator(decorated: Callable[[], str]) -> Callable[[], str]:
+            setattr(cls, alias, functools.wraps(decorated)(lambda self: self(decorated())))
+            return decorated
+
+        return decorator
 
 
 @functools.total_ordering
 class Version:
+
+    parse = VersionParser()
 
     epoch = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
         factory=lambda x: VersionSegment(x, format="{}!")
@@ -261,28 +288,10 @@ class Version:
         return (self.local_identifier or "") < (other.local_identifier or "")
 
     def __repr__(self) -> str:
-        return (
-            f"{type(self).__module__}"
-            f".{type(self).__qualname__}"
-            f"({repr(str(self))})"
-        )
+        return f"{type(self).__module__}" f".{type(self).__qualname__}({repr(str(self))})"
 
     def __str__(self) -> str:
         return self.full
-
-    @staticmethod
-    def parse(version: str, pattern: re.Pattern = DEFAULT_VERSION_PATTERN) -> Version:
-        if pattern is not DEFAULT_VERSION_PATTERN:
-            missing_capture_groups = set(DEFAULT_VERSION_PATTERN.groupindex.keys()) - set(
-                pattern.groupindex.keys()
-            )
-            if missing_capture_groups:
-                raise NonConformingVersionPattern(missing_capture_groups)
-        match = pattern.match(version)
-        if not match:
-            raise NonConformingVersionString(version, pattern)
-        segments: dict[str, Optional[str]] = match.groupdict()
-        return Version(**segments)
 
     @property
     def public(self) -> str:
