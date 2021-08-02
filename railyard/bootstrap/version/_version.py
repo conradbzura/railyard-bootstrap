@@ -84,6 +84,9 @@ class VersionSegment(int):
         self.__VersionSegment_value__: int = value
         self.__VersionSegment_format__: str = format
 
+    def __repr__(self) -> str:
+        return f"<{type(self).__qualname__}: {int(self)}>"
+
     def __str__(self) -> str:
         return (
             self.__VersionSegment_format__.format(str(self.__VersionSegment_value__))
@@ -218,28 +221,35 @@ class Version:
     epoch = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
         factory=lambda x: VersionSegment(x, format="{}!")
     )
+
     major_release = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
         factory=lambda x: VersionSegment(x, format="{}"),
         default=lambda: VersionSegment(0, format="{}"),
     )
+
     minor_release = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
         factory=lambda x: VersionSegment(x, format=".{}"),
         default=lambda: VersionSegment(0, format=".{}"),
     )
+
     release_cycle = VersionSegmentDescriptor[ReleaseCycle, Union[int, str, ReleaseCycle]](
         factory=lambda x: ReleaseCycle(x),
         default=lambda: ReleaseCycle.Alpha,
     )
+
     patch_release = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
         factory=lambda x: VersionSegment(x, format="{}"),
         default=lambda: VersionSegment(0, format="{}"),
     )
+
     post_release = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
         factory=lambda x: VersionSegment(x, format=".post{}")
     )
+
     dev_release = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
         factory=lambda x: VersionSegment(x, format=".dev{}")
     )
+
     local_identifier = VersionSegmentDescriptor[str, str](factory=lambda x: x or "")
 
     def __init__(
@@ -262,6 +272,12 @@ class Version:
         self.dev_release = dev_release
         self.local_identifier = local_identifier
 
+        self._dict = {
+            k: getattr(self, k)
+            for k, v in type(self).__dict__.items()
+            if isinstance(v, VersionSegmentDescriptor)
+        }
+
     def __eq__(self, other: object):
         if not isinstance(other, Version):
             return super().__eq__(other)
@@ -279,6 +295,12 @@ class Version:
                 )
             )
 
+    def __getitem__(self, item):
+        return self._dict[item]
+
+    def __iter__(self):
+        return iter(self._dict)
+
     def __lt__(self, other: Version):
         for this, that in zip(self.segments, other.segments):
             if this < that:
@@ -288,14 +310,14 @@ class Version:
         return (self.local_identifier or "") < (other.local_identifier or "")
 
     def __repr__(self) -> str:
-        return f"{type(self).__module__}" f".{type(self).__qualname__}({repr(str(self))})"
+        return f"<{type(self).__qualname__}: {repr(str(self))}>"
 
     def __str__(self) -> str:
         return self.full
 
     @property
     def public(self) -> str:
-        return "".join(str(s) for s in self.segments)
+        return "".join(str(v) for v in self.segments[:-1])
 
     @property
     def local(self) -> str:
@@ -307,6 +329,13 @@ class Version:
 
     @property
     def segments(self):
-        yield from (
-            s for s in self.__dict__.values() if isinstance(s, (VersionSegment, ReleaseCycle))
-        )
+        return list(self._dict.values())
+
+    def keys(self):
+        return self._dict.keys()
+
+    def items(self):
+        return self._dict.items()
+
+    def values(self):
+        return self._dict.values()
