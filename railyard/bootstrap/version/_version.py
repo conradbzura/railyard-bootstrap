@@ -6,11 +6,9 @@ import re
 import sys
 from typing import (
     Callable,
-    Generic,
     Optional,
     overload,
     Protocol,
-    TypeVar,
     Union,
 )
 
@@ -32,12 +30,6 @@ DEFAULT_VERSION_PATTERN: re.Pattern = re.compile(
 class Sortable(Protocol):
     def __lt__(self, other) -> bool:
         ...
-
-
-T_get = TypeVar("T_get", bound=Sortable, covariant=True)
-T_set = TypeVar("T_set", covariant=True)
-
-VersionSegmentFactory = Callable[[Optional[Union[T_get, T_set]]], T_get]
 
 
 def grammatical_series(*words: str) -> str:
@@ -70,7 +62,7 @@ class NonConformingVersionPattern(Exception):
         )
 
 
-class VersionSegment(int):
+class IntVersionSegment(int):
     def __new__(cls, value: Optional[Union[int, str]], format: str):
         if value is None:
             value = -1
@@ -81,70 +73,51 @@ class VersionSegment(int):
         if value is None:
             value = -1
         value = max(int(value), -1)
-        self.__VersionSegment_value__: int = value
-        self.__VersionSegment_format__: str = format
+        self.__IntVersionSegment_value__: int = value
+        self.__IntVersionSegment_format__: str = format
 
     def __repr__(self) -> str:
-        return f"<{type(self).__qualname__}: {int(self)}>"
-
-    def __str__(self) -> str:
         return (
-            self.__VersionSegment_format__.format(str(self.__VersionSegment_value__))
-            if self.__VersionSegment_value__ > -1
+            f"<{type(self).__qualname__}: "
+            f"{repr(self.__IntVersionSegment_value__)}>"
+        )
+
+    def render(self) -> str:
+        return (
+            self.__IntVersionSegment_format__.format(
+                str(self.__IntVersionSegment_value__)
+            )
+            if self.__IntVersionSegment_value__ > -1
             else ""
         )
 
 
-class VersionSegmentDescriptor(Generic[T_get, T_set]):
-    def __init__(
-        self,
-        factory: VersionSegmentFactory[T_get, T_set],
-        default: Optional[Callable[[], T_get]] = None,
-    ):
-        self._factory: VersionSegmentFactory[T_get, T_set] = factory
-        self._default: Callable[[], T_get] = default or (lambda: factory(None))
+class StrVersionSegment(str):
+    def __new__(cls, value: Optional[str], format: str):
+        if value is None:
+            value = ""
+        return super().__new__(cls, value)
 
-    def __get__(self, instance: Version, _) -> T_get:
-        value = getattr(instance, self.private_name, None)
-        if not value:
-            value = self.default
-            setattr(instance, self.private_name, value)
-        return value
+    def __init__(self, value: Optional[str], format: str):
+        if value is None:
+            value = ""
+        self.__StrVersionSegment_value__: str = value
+        self.__StrVersionSegment_format__: str = format
 
-    def __set__(self, instance: Version, value: Optional[Union[T_get, T_set]]):
-        segment = self._factory(value)
-        default = self.default
-        if segment < default:
-            segment = default
-        initial = getattr(instance, self.name)
-        if segment > initial:
-            setattr(instance, self.private_name, segment)
-            for child in self.children:
-                setattr(instance, child.private_name, child.default)
-        elif segment < initial:
-            raise ValueError("Version segments cannot be decremented!")
+    def __repr__(self) -> str:
+        return (
+            f"<{type(self).__qualname__}: "
+            f"{repr(self.__StrVersionSegment_value__)}>"
+        )
 
-    def __set_name__(self, instance, name):
-        self._name = name
-
-    @property
-    def children(self):
-        segment_descriptors = [
-            s for s in Version.__dict__.values() if isinstance(s, VersionSegmentDescriptor)
-        ]
-        yield from segment_descriptors[segment_descriptors.index(self) + 1 :]
-
-    @property
-    def default(self) -> T_get:
-        return self._default()
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def private_name(self) -> str:
-        return f"_{self.name}"
+    def render(self) -> str:
+        return (
+            self.__StrVersionSegment_format__.format(
+                str(self.__StrVersionSegment_value__)
+            )
+            if self.__StrVersionSegment_value__
+            else ""
+        )
 
 
 @functools.total_ordering
@@ -177,9 +150,6 @@ class ReleaseCycle(metaclass=enum.EnumMeta):
     def __lt__(self, other: ReleaseCycle) -> bool:
         return int(self).__lt__(int(ReleaseCycle(other)))
 
-    def __str__(self) -> str:
-        return self.__ReleaseCycle_str__ or str(self)
-
     def __int__(self) -> int:
         return self.__ReleaseCycle_int__ or 0
 
@@ -187,30 +157,46 @@ class ReleaseCycle(metaclass=enum.EnumMeta):
     def _missing_(cls, key: Union[int, str]) -> Optional[ReleaseCycle]:
         return cls.__ReleaseCycle_mapping__.get(key)
 
+    def render(self) -> str:
+        return self.__ReleaseCycle_str__ or str(self)
+
 
 class VersionParser:
-    def __call__(self, version: str, pattern: re.Pattern = DEFAULT_VERSION_PATTERN) -> Version:
+    def __call__(
+        self, version: str, pattern: re.Pattern = DEFAULT_VERSION_PATTERN
+    ) -> Version:
         if __name__ in sys.modules:
             del sys.modules[__name__]
         if pattern is not DEFAULT_VERSION_PATTERN:
-            missing_capture_groups = set(DEFAULT_VERSION_PATTERN.groupindex.keys()) - set(
-                pattern.groupindex.keys()
-            )
+            missing_capture_groups = set(
+                DEFAULT_VERSION_PATTERN.groupindex.keys()
+            ) - set(pattern.groupindex.keys())
             if missing_capture_groups:
                 raise NonConformingVersionPattern(missing_capture_groups)
         match = pattern.match(version)
         if not match:
             raise NonConformingVersionString(version, pattern)
-        segments: dict[str, Optional[str]] = match.groupdict()
+        segments: dict[str, str] = {
+            k: v for k, v in match.groupdict().items() if v is not None
+        }
         return Version(**segments)
 
     @classmethod
     def plugin(cls, alias: str):
         def decorator(decorated: Callable[[], str]) -> Callable[[], str]:
-            setattr(cls, alias, functools.wraps(decorated)(lambda self: self(decorated())))
+            setattr(
+                cls,
+                alias,
+                functools.wraps(decorated)(lambda self: self(decorated())),
+            )
             return decorated
 
         return decorator
+
+
+VersionSegment = Optional[
+    Union[IntVersionSegment, StrVersionSegment, ReleaseCycle]
+]
 
 
 @functools.total_ordering
@@ -218,44 +204,12 @@ class Version:
 
     parse = VersionParser()
 
-    epoch = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
-        factory=lambda x: VersionSegment(x, format="{}!")
-    )
-
-    major_release = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
-        factory=lambda x: VersionSegment(x, format="{}"),
-        default=lambda: VersionSegment(0, format="{}"),
-    )
-
-    minor_release = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
-        factory=lambda x: VersionSegment(x, format=".{}"),
-        default=lambda: VersionSegment(0, format=".{}"),
-    )
-
-    release_cycle = VersionSegmentDescriptor[ReleaseCycle, Union[int, str, ReleaseCycle]](
-        factory=lambda x: ReleaseCycle(x),
-        default=lambda: ReleaseCycle.Alpha,
-    )
-
-    patch_release = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
-        factory=lambda x: VersionSegment(x, format="{}"),
-        default=lambda: VersionSegment(0, format="{}"),
-    )
-
-    post_release = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
-        factory=lambda x: VersionSegment(x, format=".post{}")
-    )
-
-    dev_release = VersionSegmentDescriptor[VersionSegment, Union[int, str]](
-        factory=lambda x: VersionSegment(x, format=".dev{}")
-    )
-
-    local_identifier = VersionSegmentDescriptor[str, str](factory=lambda x: x or "")
+    segment = type("segment", (property,), {})
 
     def __init__(
         self,
         epoch: Optional[Union[int, str]] = None,
-        major_release: Optional[Union[int, str]] = None,
+        major_release: Union[int, str] = 0,
         minor_release: Optional[Union[int, str]] = None,
         release_cycle: Optional[Union[int, str, ReleaseCycle]] = None,
         patch_release: Optional[Union[int, str]] = None,
@@ -263,19 +217,27 @@ class Version:
         dev_release: Optional[Union[int, str]] = None,
         local_identifier: Optional[str] = None,
     ):
-        self.epoch = epoch
-        self.major_release = major_release
-        self.minor_release = minor_release
-        self.release_cycle = release_cycle
-        self.patch_release = patch_release
-        self.post_release = post_release
-        self.dev_release = dev_release
-        self.local_identifier = local_identifier
+        assert major_release is not None, "Major release cannot be undefined!"
+        assert (release_cycle is None) == (
+            patch_release is None
+        ), "Patch release and release cycle must be defined together!"
+        if patch_release is not None:
+            assert (
+                minor_release is not None
+            ), "Minor release cannot be undefined if patch release is defined!"
+        self._epoch = epoch
+        self._major_release = major_release
+        self._minor_release = minor_release
+        self._release_cycle = release_cycle
+        self._patch_release = patch_release
+        self._post_release = post_release
+        self._dev_release = dev_release
+        self._local_identifier = local_identifier
 
         self._dict = {
             k: getattr(self, k)
             for k, v in type(self).__dict__.items()
-            if isinstance(v, VersionSegmentDescriptor)
+            if isinstance(v, self.segment)
         }
 
     def __eq__(self, other: object):
@@ -295,41 +257,123 @@ class Version:
                 )
             )
 
+    @overload
+    def __getitem__(self, item: slice) -> dict[str, VersionSegment]:
+        ...
+
+    @overload
+    def __getitem__(self, item: str) -> VersionSegment:
+        ...
+
     def __getitem__(self, item):
-        return self._dict[item]
+        if isinstance(item, slice):
+            segments = self.segments
+            if item.start:
+                start = segments.index(item.start)
+            else:
+                start = None
+            if item.stop:
+                stop = segments.index(item.stop)
+                if stop > len(segments):
+                    stop = None
+            else:
+                stop = None
+            return {k: v for k, v in list(self.items())[slice(start, stop)]}
+        else:
+            return self._dict[item]
 
     def __iter__(self):
         return iter(self._dict)
 
-    def __lt__(self, other: Version):
+    def __lt__(self, other: Version) -> bool:
         for this, that in zip(self.segments, other.segments):
+            if this is None:
+                this = -1
+            if that is None:
+                that = -1
             if this < that:
                 return True
             elif this > that:
                 return False
-        return (self.local_identifier or "") < (other.local_identifier or "")
+        return False
 
     def __repr__(self) -> str:
         return f"<{type(self).__qualname__}: {repr(str(self))}>"
 
     def __str__(self) -> str:
-        return self.full
+        return "".join(v.render() for v in self.values() if v is not None)
 
-    @property
-    def public(self) -> str:
-        return "".join(str(v) for v in self.segments[:-1])
+    @segment
+    def epoch(self) -> Optional[IntVersionSegment]:
+        return (
+            self._epoch
+            if self._epoch is None
+            else IntVersionSegment(self._epoch, format="{}!")
+        )
+
+    @segment
+    def major_release(self) -> Optional[IntVersionSegment]:
+        return IntVersionSegment(self._major_release, format="{}")
+
+    @segment
+    def minor_release(self) -> Optional[IntVersionSegment]:
+        return IntVersionSegment(self._minor_release, format=".{}")
+
+    @segment
+    def release_cycle(self) -> Optional[ReleaseCycle]:
+        return ReleaseCycle(self._release_cycle)
+
+    @segment
+    def patch_release(self) -> Optional[IntVersionSegment]:
+        return IntVersionSegment(self._patch_release, format="{}")
+
+    @segment
+    def post_release(self) -> Optional[IntVersionSegment]:
+        return (
+            self._post_release
+            if self._post_release is None
+            else IntVersionSegment(self._post_release, format=".post{}")
+        )
+
+    @segment
+    def dev_release(self) -> Optional[IntVersionSegment]:
+        return (
+            self._dev_release
+            if self._dev_release is None
+            else IntVersionSegment(self._dev_release, format=".dev{}")
+        )
+
+    @segment
+    def local_identifier(self) -> Optional[StrVersionSegment]:
+        return (
+            self._local_identifier
+            if self._local_identifier is None
+            else StrVersionSegment(self._local_identifier, format="+{}")
+        )
 
     @property
     def local(self) -> str:
-        return f"+{self.local_identifier}" if self.local_identifier is not None else ""
+        return "".join(
+            v.render()
+            for v in self[type(self).local_identifier :].values()
+            if v is not None
+        )
 
     @property
-    def full(self) -> str:
-        return self.public + self.local
+    def public(self) -> str:
+        return "".join(
+            v.render()
+            for v in self[: type(self).local_identifier].values()
+            if v is not None
+        )
 
     @property
     def segments(self):
-        return list(self._dict.values())
+        return [
+            v
+            for v in type(self).__dict__.values()
+            if isinstance(v, self.segment)
+        ]
 
     def keys(self):
         return self._dict.keys()
