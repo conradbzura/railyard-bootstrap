@@ -6,19 +6,24 @@ from railyard.bootstrap.version import VersionParser
 try:
     import git
 except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "GitPython"])
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "GitPython"]
+    )
     import git
 
     del sys.modules["git"]
-    subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "GitPython"])
-    pass
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "uninstall", "GitPython"]
+    )
 
 
 @VersionParser.plugin("git")
 def _() -> str:
     repo = git.Repo()
     if repo.bare:
-        raise RuntimeError(f"The repo at '{repo.working_dir}' cannot be empty!")
+        raise RuntimeError(
+            f"The repo at '{repo.working_dir}' cannot be empty!"
+        )
     head_commit = repo.head.commit
     try:
         tag = repo.tags[-1]
