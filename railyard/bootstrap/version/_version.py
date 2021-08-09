@@ -8,9 +8,13 @@ from typing import (
     Callable,
     Optional,
     overload,
-    Protocol,
     Union,
 )
+
+try:
+    __ry_boostrap_version_plugins__
+except NameError:
+    __ry_boostrap_version_plugins__: dict = {}
 
 
 DEFAULT_VERSION_PATTERN: re.Pattern = re.compile(
@@ -25,11 +29,6 @@ DEFAULT_VERSION_PATTERN: re.Pattern = re.compile(
     r"((?:\+)(?P<local_identifier>[a-zA-Z0-9.]+))?"
     r"$"
 )
-
-
-class Sortable(Protocol):
-    def __lt__(self, other) -> bool:
-        ...
 
 
 def grammatical_series(*words: str) -> str:
@@ -181,14 +180,17 @@ class VersionParser:
         }
         return Version(**segments)
 
+    def __getattr__(self, attribute):
+        try:
+            return lambda: self(__ry_boostrap_version_plugins__[attribute]())
+        except KeyError:
+            return super().__getattr__(attribute)
+
     @classmethod
     def plugin(cls, alias: str):
         def decorator(decorated: Callable[[], str]) -> Callable[[], str]:
-            setattr(
-                cls,
-                alias,
-                functools.wraps(decorated)(lambda self: self(decorated())),
-            )
+            global __ry_boostrap_version_plugins__
+            __ry_boostrap_version_plugins__[alias] = decorated
             return decorated
 
         return decorator
