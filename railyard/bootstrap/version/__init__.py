@@ -17,6 +17,8 @@ for plugin in importlib.metadata.entry_points()[
     "railyard.bootstrap.version.plugins"
 ]:
     plugin.load()
+else:
+    import railyard.bootstrap.version._git  # noqa: F401
 
 
 if "setuptools" in sys.modules:

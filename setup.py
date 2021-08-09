@@ -5,7 +5,7 @@ setuptools.setup(
     author="Conrad Bzura",
     author_email="conradbzura@gmail.com",
     entry_points={
-        "railyard.bootstrap.version.plugins": ["git=railyard.bootstrap.version._git"],
+        "railyard.bootstrap.version.plugins": [],
     },
     include_package_data=True,
     name="railyard-bootstrap",
