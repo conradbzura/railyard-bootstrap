@@ -1,7 +1,7 @@
 import sys
 import subprocess
 
-from railyard.bootstrap.version import VersionParser
+from railyard.bootstrap.version import Version
 
 try:
     import git
@@ -17,7 +17,7 @@ except ImportError:
     )
 
 
-@VersionParser.plugin("git")
+@Version.plugin("git")
 def _() -> str:
     repo = git.Repo()
     if repo.bare:
@@ -40,4 +40,5 @@ def _() -> str:
     dirty = repo.index.diff(None) or repo.untracked_files
     if dirty:
         local.append("dirty")
-    return f"{public}+{'.'.join(local)}" if local else public
+    local = ".".join(local)
+    return f"{public}+{local}" if local else public

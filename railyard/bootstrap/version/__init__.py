@@ -7,10 +7,10 @@ import sys
 from typing import Any
 
 from railyard.bootstrap.version._setup import _setup
-from railyard.bootstrap.version._version import Version, VersionParser
+from railyard.bootstrap.version._version import Version
 
 
-__all__ = ["Version", "VersionParser"]
+__all__ = ["Version"]
 
 
 for plugin in importlib.metadata.entry_points()[

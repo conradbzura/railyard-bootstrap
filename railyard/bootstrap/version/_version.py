@@ -186,15 +186,6 @@ class VersionParser:
         except KeyError:
             return super().__getattr__(attribute)
 
-    @classmethod
-    def plugin(cls, alias: str):
-        def decorator(decorated: Callable[[], str]) -> Callable[[], str]:
-            global __ry_boostrap_version_plugins__
-            __ry_boostrap_version_plugins__[alias] = decorated
-            return decorated
-
-        return decorator
-
 
 VersionSegment = Optional[
     Union[IntVersionSegment, StrVersionSegment, ReleaseCycle]
@@ -376,6 +367,15 @@ class Version:
             for v in type(self).__dict__.values()
             if isinstance(v, self.segment)
         ]
+
+    @classmethod
+    def plugin(cls, alias: str):
+        def decorator(decorated: Callable[[], str]) -> Callable[[], str]:
+            global __ry_boostrap_version_plugins__
+            __ry_boostrap_version_plugins__[alias] = decorated
+            return decorated
+
+        return decorator
 
     def keys(self):
         return self._dict.keys()
