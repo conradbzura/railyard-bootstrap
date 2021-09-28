@@ -10,6 +10,7 @@ setuptools.setup(
         ],
     },
     include_package_data=True,
+    install_requires=["GitPython"],
     name="railyard-bootstrap",
     packages=[f"railyard.{p}" for p in setuptools.find_packages("./railyard")],
     zip_safe=False,
