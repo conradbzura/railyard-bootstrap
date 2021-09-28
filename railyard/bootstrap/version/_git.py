@@ -1,20 +1,6 @@
-import sys
-import subprocess
+import git
 
 from railyard.bootstrap.version import Version
-
-try:
-    import git
-except ImportError:
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "GitPython"]
-    )
-    import git
-
-    del sys.modules["git"]
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "uninstall", "GitPython"]
-    )
 
 
 @Version.plugin("git")
